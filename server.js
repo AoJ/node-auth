@@ -1,34 +1,47 @@
-/**
- * Example server.  Returns JSON indicating whether or not
- * the client provided an approved/signed certificate.
- */
-
-var https = require('https');
+var express = require('express');
 var fs = require('fs');
-
+var util = require('util');
+var https = require('https');
+;
 var options = {
-    // The Server's SSL Key
     key: fs.readFileSync('ssl/server.key'),
-    // The Server's Cert
     cert: fs.readFileSync('ssl/server.crt'),
-    // The CA (us in this case)
     ca: fs.readFileSync('ssl/ca.crt'),
-    // Ask for the client's cert
     requestCert: true,
-    // Don't automatically reject
-    rejectUnauthorized: false
+    rejectUnauthorized: false,
+    passphrase: "koko"
 };
 
-https.createServer(options, function (req, res) {
-    if (req.client.authorized) {
-        res.writeHead(200, {"Content-Type":"application/json"});
-        res.end('{"status":"approved"}');
-        // console.log(req.client);
-        console.log("Approved Client ", req.client.socket.remoteAddress);
-    } else {
-        res.writeHead(401, {"Content-Type":"application/json"});
-        res.end('{"status":"denied"}');
-        // console.log(req.client);
-        console.log("Denied Client " , req.client.socket.remoteAddress);
-    }
-}).listen(5678);
+var auth = function(req, res, next) {
+
+    var cert = req.client.getPeerCertificate ? req.client.getPeerCertificate() : {};
+
+    var msg = [];
+    msg.push(req.client.authorized ? "approved" : "denny");
+    if(cert.fingerprint) msg.push(cert.fingerprint);
+    if(cert.subject) msg.push(cert.subject.L);
+
+    util.log(msg.join("\t"));
+
+    if(req.client.authorized) next();
+    else res.json({"status":"denied"}, 401);
+}
+
+var app = express();
+var http = express();
+var appServer = https.createServer(options, app); 
+
+app.use(auth);
+
+app.get('*', function(req, res) {
+    res.json({"status":"approved"});
+});
+
+
+//redirect to ssl
+http.all('*',function(req,res){  
+    res.redirect('https://127.0.0.1:5678'+req.url);
+})
+
+appServer.listen(5678);
+http.listen(5677);
